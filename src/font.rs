@@ -110,6 +110,59 @@ impl Font {
             }
         }
     }
+
+    /// Draw left-aligned `lines` of text into a packed RGB (3 bytes/px, row-major) buffer
+    /// of size `w x h`, starting at canvas-local `(x0, y0)` (top-left of the text block),
+    /// in `color`. Pixels outside the buffer bounds are silently clipped.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_lines_rgb(
+        &self,
+        buf: &mut [u8],
+        w: i32,
+        h: i32,
+        px: f32,
+        lines: &[String],
+        x0: i32,
+        y0: i32,
+        line_height: f32,
+        color: (u8, u8, u8),
+    ) {
+        let scaled = self.scaled(px);
+        let ascent = scaled.ascent();
+
+        for (i, line) in lines.iter().enumerate() {
+            let mut pen_x = x0 as f32;
+            let pen_y = y0 as f32 + ascent + i as f32 * line_height;
+            for c in line.chars() {
+                let gid = scaled.glyph_id(c);
+                let glyph = gid.with_scale_and_position(px, ab_glyph::point(pen_x, pen_y));
+                if let Some(outlined) = self.inner.outline_glyph(glyph) {
+                    let bounds = outlined.px_bounds();
+                    outlined.draw(|gx, gy, coverage| {
+                        if coverage <= 0.0 {
+                            return;
+                        }
+                        let px_ = bounds.min.x as i32 + gx as i32;
+                        let py_ = bounds.min.y as i32 + gy as i32;
+                        if px_ < 0 || py_ < 0 || px_ >= w || py_ >= h {
+                            return;
+                        }
+                        let idx = ((py_ * w + px_) * 3) as usize;
+                        if coverage >= 0.999 {
+                            buf[idx] = color.0;
+                            buf[idx + 1] = color.1;
+                            buf[idx + 2] = color.2;
+                        } else {
+                            buf[idx] = lerp8(buf[idx], color.0, coverage);
+                            buf[idx + 1] = lerp8(buf[idx + 1], color.1, coverage);
+                            buf[idx + 2] = lerp8(buf[idx + 2], color.2, coverage);
+                        }
+                    });
+                }
+                pen_x += scaled.h_advance(gid);
+            }
+        }
+    }
 }
 
 fn byte_to_component(c: (u8, u8, u8)) -> (u16, u16, u16) {
@@ -119,4 +172,8 @@ fn byte_to_component(c: (u8, u8, u8)) -> (u16, u16, u16) {
 
 fn lerp16(a: u16, b: u16, t: f32) -> u16 {
     (a as f32 + (b as f32 - a as f32) * t).round().clamp(0.0, 65535.0) as u16
+}
+
+fn lerp8(a: u8, b: u8, t: f32) -> u8 {
+    (a as f32 + (b as f32 - a as f32) * t).round().clamp(0.0, 255.0) as u8
 }

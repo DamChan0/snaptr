@@ -2,6 +2,7 @@ mod app;
 mod font;
 mod io;
 mod logic;
+mod paint;
 
 fn print_usage() {
     eprintln!("usage: snaptr [--full] [--to <lang>] [--ocr <tesseract langs>]");
