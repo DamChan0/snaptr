@@ -32,8 +32,7 @@ impl Rect {
 }
 
 /// CJK ranges (Hangul jamo/syllables, Hiragana/Katakana, CJK Unified Ideographs + extensions).
-/// These scripts are written without inter-word spaces, so OCR word joins and text
-/// wrapping both treat them specially (no space glue, char-level line breaks).
+/// Used for OCR word-join decisions, where any of these scripts lack inter-word spaces.
 pub fn is_cjk(c: char) -> bool {
     matches!(c as u32,
         0x1100..=0x11FF |   // Hangul Jamo
@@ -47,9 +46,24 @@ pub fn is_cjk(c: char) -> bool {
     )
 }
 
+/// Scripts written with no spaces between words (Han ideographs, Hiragana/Katakana): these
+/// have no natural word boundary, so `wrap_text` must char-break them. Hangul is NOT included
+/// here: Korean text uses spaces between words just like Latin scripts, so Hangul words should
+/// wrap at spaces and only char-break when a single word is wider than the line.
+pub fn is_no_space_script(c: char) -> bool {
+    matches!(c as u32,
+        0x3040..=0x30FF |   // Hiragana + Katakana
+        0x3400..=0x4DBF |   // CJK Ext A
+        0x4E00..=0x9FFF |   // CJK Unified Ideographs
+        0xF900..=0xFAFF |   // CJK Compat Ideographs
+        0xFF00..=0xFFEF // Halfwidth/Fullwidth forms
+    )
+}
+
 /// Greedy word-wrap. Words are split on whitespace; a word is char-broken (instead of
-/// pushed whole) when it contains CJK text (no natural word boundary) or is itself wider
-/// than `max_width` (nowhere else to break it).
+/// pushed whole) when it contains a no-space script (Han/Kana: no natural word boundary) or is
+/// itself wider than `max_width` (nowhere else to break it). Hangul words wrap at spaces, same
+/// as Latin, unless a single word alone exceeds `max_width`.
 pub fn wrap_text(text: &str, max_width: f32, char_width: impl Fn(char) -> f32) -> Vec<String> {
     let mut lines = Vec::new();
     let mut cur = String::new();
@@ -58,7 +72,7 @@ pub fn wrap_text(text: &str, max_width: f32, char_width: impl Fn(char) -> f32) -
 
     for word in text.split_whitespace() {
         let word_w: f32 = word.chars().map(&char_width).sum();
-        let char_break = word.chars().any(is_cjk) || word_w > max_width;
+        let char_break = word.chars().any(is_no_space_script) || word_w > max_width;
 
         if !char_break {
             let extra = if cur.is_empty() { 0.0 } else { space_w };
@@ -304,6 +318,37 @@ mod tests {
         let m = Rect { x: 0, y: 0, w: 1000, h: 100 };
         let placed = place_box(block, m, 200, 20, 12, 8, &[], height_at);
         assert_eq!(placed.font_px, 12, "should shrink all the way to min_font_px");
+    }
+
+    #[test]
+    fn wrap_hangul_breaks_at_spaces_not_mid_word() {
+        // Each Hangul syllable is 10px wide, space is 5px. "\uC874\uC7AC\uD569\uB2C8\uB2E4" (5
+        // syllables, 50px) plus " \uC6D4\uB4DC" (space + 2 syllables, 25px) overflows a 60px
+        // line, so the break must land on the space -- never mid-word like the old CJK rule did.
+        let cw = |c: char| if c == ' ' { 5.0 } else { 10.0 };
+        let lines = wrap_text("\u{C874}\u{C7AC}\u{D569}\u{B2C8}\u{B2E4} \u{C6D4}\u{B4DC}", 60.0, cw);
+        assert_eq!(
+            lines,
+            vec!["\u{C874}\u{C7AC}\u{D569}\u{B2C8}\u{B2E4}".to_string(), "\u{C6D4}\u{B4DC}".to_string()]
+        );
+    }
+
+    #[test]
+    fn wrap_single_hangul_word_wider_than_max_still_char_breaks() {
+        // No spaces to break on, so a lone word wider than max_width falls back to char-break,
+        // same as an over-long Latin word would.
+        let cw = |_c: char| 10.0;
+        let lines = wrap_text("\u{AC00}\u{B098}\u{B2E4}\u{B77C}\u{B9C8}", 25.0, cw);
+        assert_eq!(lines, vec!["\u{AC00}\u{B098}".to_string(), "\u{B2E4}\u{B77C}".to_string(), "\u{B9C8}".to_string()]);
+    }
+
+    #[test]
+    fn wrap_han_run_char_breaks_without_spaces() {
+        // CJK ideographs have no inter-word spaces, so a run wider than max_width still
+        // char-breaks (unlike Hangul, which has real word boundaries).
+        let cw = |_c: char| 10.0;
+        let lines = wrap_text("\u{4F60}\u{597D}\u{4E16}\u{754C}", 25.0, cw);
+        assert_eq!(lines, vec!["\u{4F60}\u{597D}".to_string(), "\u{4E16}\u{754C}".to_string()]);
     }
 
     #[test]
