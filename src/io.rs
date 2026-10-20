@@ -30,9 +30,7 @@ pub fn ocr(rgb: &[u8], width: u32, height: u32, langs: &str) -> Result<Vec<OcrBl
         .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                "tesseract not found — sudo apt install tesseract-ocr tesseract-ocr-eng \
-                 tesseract-ocr-kor tesseract-ocr-jpn tesseract-ocr-chi-sim"
-                    .to_string()
+                "tesseract가 없어요 · sudo apt install tesseract-ocr tesseract-ocr-kor".to_string()
             } else {
                 format!("failed to spawn tesseract: {e}")
             }
@@ -126,7 +124,7 @@ pub fn copy_to_clipboard(text: &str) -> Result<(), String> {
         .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                "xclip not found — sudo apt install xclip".to_string()
+                "xclip이 없어요 · sudo apt install xclip".to_string()
             } else {
                 format!("failed to spawn xclip: {e}")
             }

@@ -27,7 +27,6 @@ pub const SHADOW_OFFSET_Y: i32 = 6;
 pub const SHADOW_BLUR: f32 = 18.0;
 pub const SHADOW_ALPHA: f32 = 0.38;
 
-pub const SPACE_4: i32 = 4;
 pub const SPACE_8: i32 = 8;
 pub const SPACE_12: i32 = 12;
 pub const SPACE_16: i32 = 16;
@@ -79,20 +78,6 @@ impl Canvas {
         self.px[idx] = lerp8(self.px[idx], c.0, a);
         self.px[idx + 1] = lerp8(self.px[idx + 1], c.1, a);
         self.px[idx + 2] = lerp8(self.px[idx + 2], c.2, a);
-    }
-
-    /// Flat fill, screen coords, clipped to the canvas. No antialiasing.
-    pub fn fill_rect(&mut self, r: Rect, c: Rgb, alpha: f32) {
-        let (lx, ly) = self.to_local(r.x, r.y);
-        let x0 = lx.max(0);
-        let y0 = ly.max(0);
-        let x1 = (lx + r.w).min(self.w);
-        let y1 = (ly + r.h).min(self.h);
-        for y in y0..y1 {
-            for x in x0..x1 {
-                self.blend(x, y, c, alpha);
-            }
-        }
     }
 
     /// Rounded-rect fill with a 1px antialiased feather at the corners/edges.
@@ -290,7 +275,7 @@ pub fn highlight_bounds(block: Rect) -> Rect {
 /// Size of a pill chip holding a single line of `text` at `px`.
 pub fn chip_size(font: &Font, px: f32, text: &str) -> (i32, i32) {
     let w = font.text_width(px, text).ceil() as i32 + 2 * CHIP_PAD_X;
-    let h = font.ascent(px).ceil() as i32 + 2 * CHIP_PAD_Y;
+    let h = font.line_height(px).ceil() as i32 + 2 * CHIP_PAD_Y;
     (w, h)
 }
 
@@ -335,14 +320,14 @@ mod tests {
     }
 
     #[test]
-    fn fill_rect_clips_off_canvas_rect_without_panicking() {
-        let mut cv = Canvas::new((0, 0), 10, 10, vec![200u8; 10 * 10 * 3]);
-        // Rect mostly off the top-left; only its bottom-right 4x4 corner overlaps the canvas.
-        cv.fill_rect(Rect { x: -6, y: -6, w: 10, h: 10 }, (0, 0, 0), 1.0);
+    fn fill_clips_off_canvas_rect_in_screen_coords() {
+        let mut cv = Canvas::new((100, 100), 10, 10, vec![200u8; 10 * 10 * 3]);
+        // Rect mostly off the canvas's top-left; only its bottom-right 4x4 corner overlaps.
+        cv.fill_rounded(Rect { x: 94, y: 94, w: 10, h: 10 }, 0.0, (0, 0, 0), 1.0);
         assert_eq!(pixel(&cv, 0, 0), (0, 0, 0));
-        assert_eq!(pixel(&cv, 3, 3), (0, 0, 0));
+        assert_eq!(pixel(&cv, 2, 2), (0, 0, 0));
         // Outside the overlap, the original background is untouched.
-        assert_eq!(pixel(&cv, 5, 5), (200, 200, 200));
+        assert_eq!(pixel(&cv, 6, 6), (200, 200, 200));
     }
 
     #[test]
