@@ -50,6 +50,7 @@ pub const SPACE_24: i32 = 24;
 pub const GAP: i32 = SPACE_8;
 
 const HIGHLIGHT_INFLATE: i32 = 3;
+const HIGHLIGHT_HOVER_GROW: i32 = 8;
 const HIGHLIGHT_FILL_ALPHA: f32 = 0.22;
 const HIGHLIGHT_FILL_ALPHA_HOVER: f32 = 0.34;
 const HIGHLIGHT_STROKE_ALPHA: f32 = 0.70;
@@ -265,9 +266,9 @@ pub fn translation_box(
 }
 
 /// Highlight over an original text block: accent 22%/70% fill+stroke (34%/100% hover),
-/// radius 4, inflated by 3px.
+/// radius 4, inflated by 3px normally and an extra fixed 8px on hover.
 pub fn highlight(cv: &mut Canvas, theme: &Theme, block: Rect, hover: bool) {
-    let r = highlight_bounds(block);
+    let r = highlight_paint_bounds(block, hover);
     let (fill_alpha, stroke_alpha) = if hover {
         (HIGHLIGHT_FILL_ALPHA_HOVER, HIGHLIGHT_STROKE_ALPHA_HOVER)
     } else {
@@ -285,6 +286,13 @@ pub fn highlight_bounds(block: Rect) -> Rect {
         w: block.w + 2 * HIGHLIGHT_INFLATE,
         h: block.h + 2 * HIGHLIGHT_INFLATE,
     }
+}
+
+/// Paint bounds include fixed extra padding on hover, independent of source text size.
+pub fn highlight_paint_bounds(block: Rect, hover: bool) -> Rect {
+    let r = highlight_bounds(block);
+    let grow = if hover { HIGHLIGHT_HOVER_GROW } else { 0 };
+    Rect { x: r.x - grow, y: r.y - grow, w: r.w + 2 * grow, h: r.h + 2 * grow }
 }
 
 /// Size of a pill chip holding a single line of `text` at `px`.
@@ -323,6 +331,21 @@ mod tests {
     fn pixel(cv: &Canvas, x: i32, y: i32) -> Rgb {
         let idx = ((y * cv.w + x) * 3) as usize;
         (cv.px[idx], cv.px[idx + 1], cv.px[idx + 2])
+    }
+
+    #[test]
+    fn hover_highlight_grows_by_fixed_padding_independent_of_text_size() {
+        for block in [
+            Rect { x: 10, y: 10, w: 5, h: 8 },
+            Rect { x: 20, y: 20, w: 400, h: 80 },
+        ] {
+            let normal = highlight_paint_bounds(block, false);
+            let hovered = highlight_paint_bounds(block, true);
+            assert_eq!(normal.x - hovered.x, HIGHLIGHT_HOVER_GROW);
+            assert_eq!(normal.y - hovered.y, HIGHLIGHT_HOVER_GROW);
+            assert_eq!(hovered.w - normal.w, 2 * HIGHLIGHT_HOVER_GROW);
+            assert_eq!(hovered.h - normal.h, 2 * HIGHLIGHT_HOVER_GROW);
+        }
     }
 
     #[test]

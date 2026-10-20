@@ -1,6 +1,6 @@
 //! Fullscreen selection/result overlay: one borderless window over the whole virtual desktop
-//! (winit + softbuffer), showing a frozen screenshot. The user drags (or clicks / presses
-//! Enter) to pick a region; OCR + translation run on a worker thread; results are painted as
+//! (winit + softbuffer), showing a frozen screenshot. The user drags or presses Enter to pick
+//! a region; OCR + translation run on a worker thread; results are painted as
 //! clickable highlight/translation boxes until Esc.
 //!
 //! Everything is in desktop-local physical pixels: (0, 0) is the virtual desktop's top-left.
@@ -116,6 +116,7 @@ impl Element {
     /// Area this element's painting touches.
     fn bounds(&self) -> Rect {
         match self.kind {
+            Kind::Highlight => inflate(paint::highlight_paint_bounds(self.rect, true), 2),
             Kind::Box { .. } => inflate(self.rect, PAINT_MARGIN),
             _ => inflate(self.hit_rect(), 2),
         }
