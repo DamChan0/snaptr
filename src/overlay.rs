@@ -478,10 +478,16 @@ impl App {
 
             let monitor = self.monitor_at(block_rect.x + block_rect.w / 2, block_rect.y + block_rect.h / 2);
             let box_w = block_rect.w.clamp(MIN_BOX_W, (monitor.w - 2 * SPACE_16).max(MIN_BOX_W));
+            // Font sizes are in logical px; chip_px carries the monitor scale factor.
+            let scale = self.chip_px / 14.0;
+            let min_px = (MIN_FONT_PX as f32 * scale).round() as i32;
             let preferred = match self.cfg.font_px {
-                0 => ((block.avg_line_height * 1.05).round() as i32).clamp(MIN_FONT_PX, MAX_FONT_PX),
-                px => px as i32,
+                0 => ((block.avg_line_height * 1.05).round() as i32).clamp(min_px, (MAX_FONT_PX as f32 * scale) as i32),
+                px => (px as f32 * scale).round() as i32,
             };
+            // Shrinking to dodge neighbours makes text unreadable in dense layouts; below 85%
+            // a readable overlap beats a tiny box.
+            let floor = ((preferred as f32 * 0.85).round() as i32).max(min_px).min(preferred);
             let failed = translation.is_err();
             let text = translation.unwrap_or_else(|_| block.text.clone());
             let wrap = |px: f32| {
@@ -507,7 +513,7 @@ impl App {
                 monitor,
                 box_w,
                 preferred,
-                MIN_FONT_PX.min(preferred),
+                floor,
                 GAP,
                 &avoid,
                 height_for_font,
