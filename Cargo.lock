@@ -2709,7 +2709,6 @@ dependencies = [
  "eframe",
  "global-hotkey",
  "ksni",
- "parking_lot",
  "serde_json",
  "softbuffer",
  "tray-icon",

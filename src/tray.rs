@@ -9,7 +9,7 @@
 use crate::config::Config;
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
-use parking_lot::Mutex;
+use std::sync::Mutex;
 use std::net::TcpListener;
 use std::process::{Child, Command};
 use std::str::FromStr;
@@ -63,7 +63,9 @@ pub fn run() -> Result<(), String> {
     let hotkey_proxy = Mutex::new(proxy.clone());
     GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
         if event.state() == HotKeyState::Pressed {
-            let _ = hotkey_proxy.lock().send_event(UserEvent::HotkeyPressed(event.id()));
+            if let Ok(p) = hotkey_proxy.lock() {
+                let _ = p.send_event(UserEvent::HotkeyPressed(event.id()));
+            }
         }
     }));
 
@@ -353,7 +355,7 @@ mod linux_tray {
 mod windows_tray {
     use super::{icon_rgba, UserEvent};
     use crate::config::Config;
-    use parking_lot::Mutex;
+    use std::sync::Mutex;
     use std::sync::Arc;
     use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
     use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -414,7 +416,9 @@ mod windows_tray {
                     None
                 };
                 if let Some(event) = sent {
-                    let _ = menu_proxy.lock().send_event(event);
+                    if let Ok(p) = menu_proxy.lock() {
+                        let _ = p.send_event(event);
+                    }
                 }
             }));
 
@@ -424,7 +428,9 @@ mod windows_tray {
                 if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } =
                     event
                 {
-                    let _ = click_proxy.lock().send_event(UserEvent::Settings);
+                    if let Ok(p) = click_proxy.lock() {
+                        let _ = p.send_event(UserEvent::Settings);
+                    }
                 }
             }));
 
