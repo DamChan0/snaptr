@@ -14,6 +14,7 @@ pub struct Lang {
     /// Tesseract traineddata name (Linux OCR).
     pub tesseract: &'static str,
     /// BCP-47 tag (Windows OCR).
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub bcp47: &'static str,
 }
 
@@ -78,10 +79,6 @@ impl Config {
 
     pub fn source_lang(&self) -> &'static Lang {
         lang(&self.source).unwrap_or(&LANGS[1])
-    }
-
-    pub fn target_lang(&self) -> &'static Lang {
-        lang(&self.target).unwrap_or(&LANGS[0])
     }
 
     /// `$XDG_CONFIG_HOME/snaptr/config` (or `~/.config/...`) on Linux,

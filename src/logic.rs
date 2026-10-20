@@ -222,6 +222,7 @@ pub fn parse_tsv(tsv: &str) -> Vec<OcrBlock> {
 /// line's height of it) — otherwise it starts a new block. `avg_line_height` is the mean
 /// height of the lines merged into the block; CJK-CJK line joins drop the space tesseract's
 /// `parse_tsv` already would have.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn group_lines(lines: &[(Rect, String)]) -> Vec<OcrBlock> {
     let mut order: Vec<usize> = (0..lines.len()).collect();
     order.sort_by_key(|&i| lines[i].0.y);

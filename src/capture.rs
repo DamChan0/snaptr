@@ -1,4 +1,5 @@
-//! Frozen-screen capture in physical pixels, virtual-desktop coordinates.
+//! Screen access in physical pixels, virtual-desktop coordinates: frozen-screen capture,
+//! the pointer position, and (X11) input focus for the overlay window.
 
 use crate::logic::Rect;
 
@@ -8,6 +9,26 @@ pub fn capture(r: Rect) -> Result<Vec<u8>, String> {
         return Err(format!("capture: empty rect {r:?}"));
     }
     platform::capture(r)
+}
+
+/// Pointer position on the virtual desktop, if it can be queried.
+pub fn pointer() -> Option<(i32, i32)> {
+    platform::pointer()
+}
+
+/// Give keyboard focus to X11 window `xid`. Override-redirect windows are never focused by
+/// the window manager, and focus is server-global, so setting it from our own connection
+/// routes key events to winit's window.
+#[cfg(target_os = "linux")]
+pub fn focus(xid: u32) -> Result<(), String> {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{ConnectionExt, InputFocus};
+    let (conn, _) = x11rb::connect(None).map_err(|e| e.to_string())?;
+    conn.set_input_focus(InputFocus::PARENT, xid, x11rb::CURRENT_TIME)
+        .map_err(|e| e.to_string())?
+        .check()
+        .map_err(|e| e.to_string())?;
+    conn.flush().map_err(|e| e.to_string())
 }
 
 #[cfg(target_os = "linux")]
@@ -50,6 +71,14 @@ mod platform {
             }
         }
         Ok(out)
+    }
+
+    pub fn pointer() -> Option<(i32, i32)> {
+        use x11rb::protocol::xproto::ConnectionExt;
+        let (conn, screen_num) = x11rb::connect(None).ok()?;
+        let root = conn.setup().roots[screen_num].root;
+        let reply = conn.query_pointer(root).ok()?.reply().ok()?;
+        Some((i32::from(reply.root_x), i32::from(reply.root_y)))
     }
 }
 
@@ -138,5 +167,11 @@ mod platform {
             }
             Ok(out)
         }
+    }
+
+    pub fn pointer() -> Option<(i32, i32)> {
+        let mut p = windows::Win32::Foundation::POINT::default();
+        unsafe { windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut p) }.ok()?;
+        Some((p.x, p.y))
     }
 }
