@@ -1,22 +1,36 @@
 //! Pure client-side compositing: rounded rects, strokes, shadows, chips and translation
-//! boxes. No X11 calls here; operates on an in-memory RGB canvas that the caller fetched
-//! from the frozen/dim pixmap and will PutImage back. Tokens from design.md live here as
-//! `pub const`s; app.rs imports them and keeps no color constants of its own.
+//! boxes. No windowing calls here; operates on an in-memory RGB canvas. Fixed design tokens
+//! live here as `pub const`s; user-configurable colors arrive as a `Theme`.
 
 use crate::font::Font;
 use crate::logic::Rect;
 
 pub type Rgb = (u8, u8, u8);
 
+/// User-configurable colors (from `Config`). Secondary text is derived from `text`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Theme {
+    /// Highlights, selection outline, hover/copied borders.
+    pub accent: Rgb,
+    /// Translation box and chip background.
+    pub surface: Rgb,
+    /// Translation text.
+    pub text: Rgb,
+}
+
+impl Theme {
+    /// `text` pulled 35% toward `surface`: status chips and failed translations.
+    pub fn text_secondary(&self) -> Rgb {
+        let mix = |t: u8, s: u8| lerp8(t, s, 0.35);
+        (mix(self.text.0, self.surface.0), mix(self.text.1, self.surface.1), mix(self.text.2, self.surface.2))
+    }
+}
+
 // ---- design tokens (design.md "Tokens") ----
 
-pub const ACCENT: Rgb = (0xF2, 0xB5, 0x44);
-pub const SURFACE: Rgb = (0x16, 0x17, 0x1A);
 pub const SURFACE_ALPHA: f32 = 0.97;
 pub const SURFACE_BORDER: Rgb = (0xFF, 0xFF, 0xFF);
 pub const SURFACE_BORDER_ALPHA: f32 = 0.08;
-pub const TEXT_PRIMARY: Rgb = (0xEC, 0xED, 0xEF);
-pub const TEXT_SECONDARY: Rgb = (0xA4, 0xA7, 0xAE);
 
 /// Radius for translation boxes and chips.
 pub const RADIUS_BOX: f32 = 8.0;
@@ -226,10 +240,11 @@ fn lerp8(a: u8, b: u8, t: f32) -> u8 {
 }
 
 /// Translation box: shadow, surface fill (97%), 1px border (white 8%, accent 100% on
-/// hover), text in TEXT_PRIMARY or TEXT_SECONDARY (failed translation) at `box_padding`.
+/// hover), text in `theme.text` or secondary (failed translation) at `box_padding`.
 #[allow(clippy::too_many_arguments)]
 pub fn translation_box(
     cv: &mut Canvas,
+    theme: &Theme,
     r: Rect,
     font: &Font,
     font_px: f32,
@@ -238,28 +253,28 @@ pub fn translation_box(
     hover: bool,
 ) {
     cv.shadow(r, RADIUS_BOX, SHADOW_OFFSET_Y, SHADOW_BLUR, SHADOW_ALPHA);
-    cv.fill_rounded(r, RADIUS_BOX, SURFACE, SURFACE_ALPHA);
+    cv.fill_rounded(r, RADIUS_BOX, theme.surface, SURFACE_ALPHA);
     if hover {
-        cv.stroke_rounded(r, RADIUS_BOX, BORDER_WIDTH, ACCENT, 1.0);
+        cv.stroke_rounded(r, RADIUS_BOX, BORDER_WIDTH, theme.accent, 1.0);
     } else {
         cv.stroke_rounded(r, RADIUS_BOX, BORDER_WIDTH, SURFACE_BORDER, SURFACE_BORDER_ALPHA);
     }
     let (pad_x, pad_y) = box_padding(font_px);
-    let color = if secondary { TEXT_SECONDARY } else { TEXT_PRIMARY };
+    let color = if secondary { theme.text_secondary() } else { theme.text };
     cv.text(font, font_px, lines, r.x + pad_x, r.y + pad_y, font.line_height(font_px), color);
 }
 
 /// Highlight over an original text block: accent 22%/70% fill+stroke (34%/100% hover),
 /// radius 4, inflated by 3px.
-pub fn highlight(cv: &mut Canvas, block: Rect, hover: bool) {
+pub fn highlight(cv: &mut Canvas, theme: &Theme, block: Rect, hover: bool) {
     let r = highlight_bounds(block);
     let (fill_alpha, stroke_alpha) = if hover {
         (HIGHLIGHT_FILL_ALPHA_HOVER, HIGHLIGHT_STROKE_ALPHA_HOVER)
     } else {
         (HIGHLIGHT_FILL_ALPHA, HIGHLIGHT_STROKE_ALPHA)
     };
-    cv.fill_rounded(r, RADIUS_HIGHLIGHT, ACCENT, fill_alpha);
-    cv.stroke_rounded(r, RADIUS_HIGHLIGHT, BORDER_WIDTH, ACCENT, stroke_alpha);
+    cv.fill_rounded(r, RADIUS_HIGHLIGHT, theme.accent, fill_alpha);
+    cv.stroke_rounded(r, RADIUS_HIGHLIGHT, BORDER_WIDTH, theme.accent, stroke_alpha);
 }
 
 /// `block` inflated by the highlight's 3px margin (for hit-test/background fetch).
@@ -280,14 +295,15 @@ pub fn chip_size(font: &Font, px: f32, text: &str) -> (i32, i32) {
 }
 
 /// Surface pill, radius 8, padding x12/y6. `accent_border` adds a 1px accent border and
-/// switches the text to TEXT_PRIMARY; otherwise text is TEXT_SECONDARY with no border.
-pub fn chip(cv: &mut Canvas, r: Rect, font: &Font, px: f32, text: &str, accent_border: bool) {
-    cv.fill_rounded(r, RADIUS_BOX, SURFACE, SURFACE_ALPHA);
+/// switches the text to `theme.text`; otherwise text is secondary with no border.
+#[allow(clippy::too_many_arguments)]
+pub fn chip(cv: &mut Canvas, theme: &Theme, r: Rect, font: &Font, px: f32, text: &str, accent_border: bool) {
+    cv.fill_rounded(r, RADIUS_BOX, theme.surface, SURFACE_ALPHA);
     let color = if accent_border {
-        cv.stroke_rounded(r, RADIUS_BOX, BORDER_WIDTH, ACCENT, 1.0);
-        TEXT_PRIMARY
+        cv.stroke_rounded(r, RADIUS_BOX, BORDER_WIDTH, theme.accent, 1.0);
+        theme.text
     } else {
-        TEXT_SECONDARY
+        theme.text_secondary()
     };
     let lines = [text.to_string()];
     cv.text(font, px, &lines, r.x + CHIP_PAD_X, r.y + CHIP_PAD_Y, font.line_height(px), color);

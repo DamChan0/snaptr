@@ -1,4 +1,5 @@
-//! Font loading (via `fc-match`) and glyph rasterization into packed RGB buffers.
+//! Font loading (fontconfig on Linux, the Windows fonts dir on Windows) and glyph
+//! rasterization into packed RGB buffers.
 
 use ab_glyph::{Font as FontTrait, ScaleFont};
 
@@ -7,25 +8,54 @@ pub struct Font {
 }
 
 impl Font {
-    /// Resolve and load a font for `lang` (e.g. "ko", "eng") via fontconfig.
+    /// Load a system sans-serif font covering `lang` (Google code, e.g. "ko", "zh-CN").
     pub fn load(lang: &str) -> Result<Font, String> {
-        let query = format!("sans-serif:lang={lang}");
-        let out = std::process::Command::new("fc-match")
-            .args(["-f", "%{file}|%{index}", &query])
-            .output()
-            .map_err(|e| format!("fc-match not found: {e}"))?;
-        if !out.status.success() {
-            return Err("fc-match failed to resolve a font".into());
-        }
-        let s = String::from_utf8_lossy(&out.stdout);
-        let (path, index_str) = s.split_once('|').ok_or("unexpected fc-match output")?;
-        let index: u32 = index_str.trim().parse().unwrap_or(0);
-        let data = std::fs::read(path).map_err(|e| format!("reading font {path}: {e}"))?;
+        let (data, index) = font_bytes(lang)?;
         let inner = ab_glyph::FontVec::try_from_vec_and_index(data, index)
-            .map_err(|e| format!("parsing font {path}: {e:?}"))?;
+            .map_err(|e| format!("parsing font for '{lang}': {e:?}"))?;
         Ok(Font { inner })
     }
+}
 
+/// Raw bytes and face index of a system font covering `lang`. Also used to give egui
+/// (settings window) CJK/Thai glyphs.
+#[cfg(target_os = "linux")]
+pub fn font_bytes(lang: &str) -> Result<(Vec<u8>, u32), String> {
+    let query = format!("sans-serif:lang={lang}");
+    let out = std::process::Command::new("fc-match")
+        .args(["-f", "%{file}|%{index}", &query])
+        .output()
+        .map_err(|e| format!("fc-match not found: {e}"))?;
+    if !out.status.success() {
+        return Err("fc-match failed to resolve a font".into());
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    let (path, index_str) = s.split_once('|').ok_or("unexpected fc-match output")?;
+    let index: u32 = index_str.trim().parse().unwrap_or(0);
+    let data = std::fs::read(path).map_err(|e| format!("reading font {path}: {e}"))?;
+    Ok((data, index))
+}
+
+#[cfg(windows)]
+pub fn font_bytes(lang: &str) -> Result<(Vec<u8>, u32), String> {
+    let candidates: &[&str] = match lang {
+        "ko" => &["malgun.ttf", "gulim.ttc"],
+        "ja" => &["YuGothM.ttc", "meiryo.ttc", "msgothic.ttc"],
+        "zh-CN" => &["msyh.ttc", "simsun.ttc"],
+        "zh-TW" => &["msjh.ttc", "mingliub.ttc"],
+        "th" => &["LeelawUI.ttf", "tahoma.ttf"],
+        _ => &["segoeui.ttf", "arial.ttf"],
+    };
+    let dir = std::path::PathBuf::from(std::env::var_os("WINDIR").unwrap_or_else(|| "C:\\Windows".into()))
+        .join("Fonts");
+    candidates
+        .iter()
+        .find_map(|name| std::fs::read(dir.join(name)).ok())
+        .map(|data| (data, 0))
+        .ok_or_else(|| format!("no font for '{lang}' in {}", dir.display()))
+}
+
+impl Font {
     fn scaled(&self, px: f32) -> ab_glyph::PxScaleFont<&ab_glyph::FontVec> {
         self.inner.as_scaled(px)
     }
