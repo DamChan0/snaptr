@@ -214,6 +214,70 @@ pub fn parse_tsv(tsv: &str) -> Vec<OcrBlock> {
         .collect()
 }
 
+/// Group per-line OCR output (e.g. Windows.Media.Ocr, which only gives line-level rects and
+/// text, not tesseract's block/paragraph structure) into paragraph-like `OcrBlock`s.
+/// Lines are visited top to bottom; a line joins the block it's building when it starts
+/// close enough below the last line added to that block (gap < 0.8x that line's height) and
+/// is roughly horizontally aligned with it (overlaps horizontally, or starts within 2x that
+/// line's height of it) — otherwise it starts a new block. `avg_line_height` is the mean
+/// height of the lines merged into the block; CJK-CJK line joins drop the space tesseract's
+/// `parse_tsv` already would have.
+pub fn group_lines(lines: &[(Rect, String)]) -> Vec<OcrBlock> {
+    let mut order: Vec<usize> = (0..lines.len()).collect();
+    order.sort_by_key(|&i| lines[i].0.y);
+
+    struct Building {
+        rect: Rect,
+        text: String,
+        height_sum: f32,
+        count: f32,
+        last: Rect,
+    }
+
+    let mut blocks: Vec<Building> = Vec::new();
+    for i in order {
+        let (rect, text) = &lines[i];
+        if text.is_empty() {
+            continue;
+        }
+        let joinable = blocks.last().is_some_and(|b| {
+            let gap = (rect.y - b.last.bottom()) as f32;
+            let aligned = rect.x < b.last.right() && b.last.x < rect.right()
+                || (rect.x - b.last.x).abs() < 2 * b.last.h;
+            gap < 0.8 * b.last.h as f32 && aligned
+        });
+        if joinable {
+            let b = blocks.last_mut().unwrap();
+            let union_x = b.rect.x.min(rect.x);
+            let union_y = b.rect.y.min(rect.y);
+            let union_right = b.rect.right().max(rect.right());
+            let union_bottom = b.rect.bottom().max(rect.bottom());
+            b.rect = Rect { x: union_x, y: union_y, w: union_right - union_x, h: union_bottom - union_y };
+            match (b.text.chars().last(), text.chars().next()) {
+                (Some(last), Some(first)) if is_cjk(last) && is_cjk(first) => {}
+                _ => b.text.push(' '),
+            }
+            b.text.push_str(text);
+            b.height_sum += rect.h as f32;
+            b.count += 1.0;
+            b.last = *rect;
+        } else {
+            blocks.push(Building {
+                rect: *rect,
+                text: text.clone(),
+                height_sum: rect.h as f32,
+                count: 1.0,
+                last: *rect,
+            });
+        }
+    }
+
+    blocks
+        .into_iter()
+        .map(|b| OcrBlock { rect: b.rect, text: b.text, avg_line_height: b.height_sum / b.count })
+        .collect()
+}
+
 /// Parse a `translate.googleapis.com` gtx response: a JSON array whose first element is
 /// itself an array of `[translated, original, ...]` segments. The full translation is the
 /// concatenation of every segment's first string.
@@ -377,5 +441,51 @@ mod tests {
         let json = r#"[[["\uc548\ub155","hello",null,null,1],[" \uc138\uacc4","world",null,null,1]],null,"en"]"#;
         let translated = parse_google_translation(json).unwrap();
         assert_eq!(translated, "\u{C548}\u{B155} \u{C138}\u{ACC4}");
+    }
+
+    #[test]
+    fn group_lines_merges_close_lines_into_one_block() {
+        let lines = vec![
+            (Rect { x: 10, y: 10, w: 100, h: 20 }, "line one".to_string()),
+            (Rect { x: 10, y: 32, w: 100, h: 20 }, "line two".to_string()),
+        ];
+        let blocks = group_lines(&lines);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].text, "line one line two");
+        assert_eq!(blocks[0].rect, Rect { x: 10, y: 10, w: 100, h: 42 });
+        assert_eq!(blocks[0].avg_line_height, 20.0);
+    }
+
+    #[test]
+    fn group_lines_splits_on_big_vertical_gap() {
+        let lines = vec![
+            (Rect { x: 10, y: 10, w: 100, h: 20 }, "paragraph one".to_string()),
+            (Rect { x: 10, y: 200, w: 100, h: 20 }, "paragraph two".to_string()),
+        ];
+        let blocks = group_lines(&lines);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].text, "paragraph one");
+        assert_eq!(blocks[1].text, "paragraph two");
+    }
+
+    #[test]
+    fn group_lines_splits_side_by_side_columns() {
+        let lines = vec![
+            (Rect { x: 10, y: 10, w: 100, h: 20 }, "left column".to_string()),
+            (Rect { x: 500, y: 12, w: 100, h: 20 }, "right column".to_string()),
+        ];
+        let blocks = group_lines(&lines);
+        assert_eq!(blocks.len(), 2);
+    }
+
+    #[test]
+    fn group_lines_joins_cjk_lines_without_space() {
+        let lines = vec![
+            (Rect { x: 10, y: 10, w: 40, h: 20 }, "\u{D55C}\u{AD6D}".to_string()),
+            (Rect { x: 10, y: 32, w: 40, h: 20 }, "\u{C5B4}".to_string()),
+        ];
+        let blocks = group_lines(&lines);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].text, "\u{D55C}\u{AD6D}\u{C5B4}");
     }
 }
