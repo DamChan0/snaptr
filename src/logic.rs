@@ -117,7 +117,9 @@ pub fn wrap_text(text: &str, max_width: f32, char_width: impl Fn(char) -> f32) -
     lines
 }
 
+// Tesseract output parsing; only the Linux OCR backend uses it (tests run everywhere).
 /// One tesseract TSV row (level/block_num/par_num plus geometry, conf, text).
+#[cfg_attr(windows, allow(dead_code))]
 struct TsvRow<'a> {
     level: i32,
     block_num: i32,
@@ -130,6 +132,7 @@ struct TsvRow<'a> {
     text: &'a str,
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn parse_tsv_row(line: &str) -> Option<TsvRow<'_>> {
     let f: Vec<&str> = line.split('\t').collect();
     if f.len() < 12 {
@@ -161,6 +164,7 @@ pub struct OcrBlock {
 /// (word) rows with conf >= 30, skipping empty words. Words are space-joined except where
 /// both the preceding and following characters are CJK (those scripts have no inter-word
 /// spaces in the source image).
+#[cfg_attr(windows, allow(dead_code))]
 pub fn parse_tsv(tsv: &str) -> Vec<OcrBlock> {
     let rows: Vec<TsvRow> = tsv.lines().skip(1).filter_map(parse_tsv_row).collect();
 

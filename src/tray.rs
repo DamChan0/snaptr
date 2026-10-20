@@ -333,7 +333,7 @@ mod linux_tray {
             match tray.spawn() {
                 Ok(handle) => PlatformTray { handle: Some(handle) },
                 Err(e) => {
-                    eprintln!("snaptr: 트레이 아이콘을 표시할 수 없습니다 (단축키는 계속 동작): {e}");
+                    eprintln!("snaptr: 트레이 아이콘을 띄울 수 없어요 (단축키는 계속 동작해요): {e}");
                     PlatformTray { handle: None }
                 }
             }
@@ -451,7 +451,7 @@ mod windows_tray {
             let icon_handle = match builder.build() {
                 Ok(icon) => Some(icon),
                 Err(e) => {
-                    eprintln!("snaptr: 트레이 아이콘을 표시할 수 없습니다 (단축키는 계속 동작): {e}");
+                    eprintln!("snaptr: 트레이 아이콘을 띄울 수 없어요 (단축키는 계속 동작해요): {e}");
                     None
                 }
             };

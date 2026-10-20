@@ -12,6 +12,7 @@ pub struct Lang {
     /// Google Translate code; also the config value.
     pub google: &'static str,
     /// Tesseract traineddata name (Linux OCR).
+    #[cfg_attr(windows, allow(dead_code))]
     pub tesseract: &'static str,
     /// BCP-47 tag (Windows OCR).
     #[cfg_attr(not(windows), allow(dead_code))]

@@ -21,6 +21,13 @@ const RADIUS: u8 = 8;
 const HIGHLIGHT_FILL_ALPHA: f32 = 0.22;
 const SAVED_MESSAGE: Duration = Duration::from_millis(1500);
 const ERROR_TEXT: Rgb = (0xE0, 0x6C, 0x6C);
+const PAGE_MARGIN: u8 = 24;
+const CARD_RADIUS: u8 = 10;
+/// Section card fill; one step lighter than PANEL so SURFACE-filled widgets read as inset.
+const CARD: Rgb = (0x26, 0x28, 0x2D);
+const BORDER: Rgb = (0x3A, 0x3C, 0x42);
+/// Label column width in section grids.
+const LABEL_W: f32 = 104.0;
 
 /// Which hotkey row is currently waiting for a new key combo.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,8 +41,8 @@ pub fn run() -> Result<(), String> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("snaptr 설정")
-            .with_inner_size([480.0, 640.0])
-            .with_min_inner_size([420.0, 520.0]),
+            .with_inner_size([520.0, 880.0])
+            .with_min_inner_size([460.0, 520.0]),
         renderer: if use_glow { eframe::Renderer::Glow } else { eframe::Renderer::Wgpu },
         ..Default::default()
     };
@@ -122,6 +129,7 @@ fn dark_visuals(accent: egui::Color32) -> egui::Visuals {
     v.widgets.inactive.bg_fill = rgb32(SURFACE);
     v.widgets.inactive.weak_bg_fill = rgb32(SURFACE);
     v.widgets.inactive.fg_stroke = Stroke::new(1.0, rgb32(TEXT));
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, rgb32(BORDER));
     v.widgets.hovered.bg_fill = rgb32(SURFACE);
     v.widgets.hovered.weak_bg_fill = rgb32(SURFACE);
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, accent);
@@ -267,113 +275,121 @@ impl SettingsApp {
     }
 
     fn draw_body(&mut self, ui: &mut egui::Ui) {
-        section_header(ui, "언어");
-        ui.horizontal(|ui| {
-            ui.label("원본 언어");
-            lang_combo(ui, "source_lang", &mut self.cfg.source);
-        });
-        ui.add_space(paint::SPACE_8 as f32);
-        ui.horizontal(|ui| {
-            ui.label("번역 언어");
-            lang_combo(ui, "target_lang", &mut self.cfg.target);
+        section(ui, "번역", |ui| {
+            grid(ui, "langs", |ui| {
+                ui.label("원본 언어");
+                lang_combo(ui, "source_lang", &mut self.cfg.source);
+                ui.end_row();
+                ui.label("번역 언어");
+                lang_combo(ui, "target_lang", &mut self.cfg.target);
+                ui.end_row();
+                ui.label("글자 크기");
+                ui.horizontal(|ui| {
+                    let mut auto = self.cfg.font_px == 0;
+                    if ui.checkbox(&mut auto, "원문에 맞춤").changed() {
+                        if auto {
+                            if self.cfg.font_px != 0 {
+                                self.last_font_px = self.cfg.font_px;
+                            }
+                            self.cfg.font_px = 0;
+                        } else {
+                            self.cfg.font_px = self.last_font_px;
+                        }
+                    }
+                    if !auto {
+                        ui.add(egui::Slider::new(&mut self.cfg.font_px, FONT_PX_MIN..=FONT_PX_MAX).suffix(" px"));
+                        self.last_font_px = self.cfg.font_px;
+                    }
+                });
+                ui.end_row();
+            });
         });
 
-        section_header(ui, "번역 글자 크기");
-        let mut auto = self.cfg.font_px == 0;
-        if ui.checkbox(&mut auto, "원문 크기에 맞춤").changed() {
-            if auto {
-                if self.cfg.font_px != 0 {
-                    self.last_font_px = self.cfg.font_px;
-                }
-                self.cfg.font_px = 0;
-            } else {
-                self.cfg.font_px = self.last_font_px;
+        section(ui, "색상", |ui| {
+            grid(ui, "colors", |ui| {
+                color_row(ui, "강조색", &mut self.cfg.accent);
+                color_row(ui, "박스 배경", &mut self.cfg.surface);
+                color_row(ui, "글자색", &mut self.cfg.text);
+            });
+            ui.add_space(paint::SPACE_12 as f32);
+            draw_preview(ui, &self.cfg);
+            ui.add_space(paint::SPACE_8 as f32);
+            if ui.button("기본 색으로").clicked() {
+                let d = Config::default();
+                self.cfg.accent = d.accent;
+                self.cfg.surface = d.surface;
+                self.cfg.text = d.text;
             }
-        }
-        if !auto {
-            ui.add(egui::Slider::new(&mut self.cfg.font_px, FONT_PX_MIN..=FONT_PX_MAX).suffix(" px"));
-            self.last_font_px = self.cfg.font_px;
-        }
+        });
 
-        section_header(ui, "색상");
-        color_row(ui, "강조색", &mut self.cfg.accent);
-        color_row(ui, "박스 배경", &mut self.cfg.surface);
-        color_row(ui, "글자색", &mut self.cfg.text);
-        if ui.button("기본 색으로").clicked() {
-            let d = Config::default();
-            self.cfg.accent = d.accent;
-            self.cfg.surface = d.surface;
-            self.cfg.text = d.text;
-        }
-        ui.add_space(paint::SPACE_12 as f32);
-        draw_preview(ui, &self.cfg);
+        section(ui, "단축키", |ui| {
+            grid(ui, "hotkeys", |ui| {
+                self.hotkey_row(ui, "영역 번역", HotkeySlot::Crop);
+                self.hotkey_row(ui, "화면 전체 번역", HotkeySlot::Full);
+            });
+        });
 
-        section_header(ui, "단축키");
-        self.hotkey_row(ui, "영역 번역", HotkeySlot::Crop);
-        ui.add_space(paint::SPACE_8 as f32);
-        self.hotkey_row(ui, "화면 전체 번역", HotkeySlot::Full);
-
-        ui.add_space(paint::SPACE_24 as f32);
+        ui.add_space(paint::SPACE_16 as f32);
     }
 
     fn hotkey_row(&mut self, ui: &mut egui::Ui, label: &str, slot: HotkeySlot) {
+        ui.label(label);
         ui.horizontal(|ui| {
-            ui.label(label);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.capturing == Some(slot) {
-                    ui.colored_label(accent32(&self.cfg), "키 조합을 누르세요 · Esc 취소");
-                } else {
-                    if ui.button("변경").clicked() {
-                        self.capturing = Some(slot);
-                        self.hotkey_error = None;
-                        self.super_held = false;
-                    }
-                    let current = match slot {
-                        HotkeySlot::Crop => &self.cfg.hotkey_crop,
-                        HotkeySlot::Full => &self.cfg.hotkey_full,
-                    };
-                    ui.monospace(current.replace('+', " + "));
+            if self.capturing == Some(slot) {
+                ui.colored_label(accent32(&self.cfg), "키 조합을 누르세요 · Esc 취소");
+            } else {
+                let current = match slot {
+                    HotkeySlot::Crop => &self.cfg.hotkey_crop,
+                    HotkeySlot::Full => &self.cfg.hotkey_full,
+                };
+                ui.label(egui::RichText::new(current.replace('+', " + ")).monospace().strong());
+                if ui.button("변경").clicked() {
+                    self.capturing = Some(slot);
+                    self.hotkey_error = None;
+                    self.super_held = false;
                 }
-            });
-        });
-        if let Some((err_slot, msg)) = &self.hotkey_error {
-            if *err_slot == slot {
-                ui.colored_label(rgb32(ERROR_TEXT), msg);
             }
-        }
+            if let Some((err_slot, msg)) = &self.hotkey_error {
+                if *err_slot == slot {
+                    ui.colored_label(rgb32(ERROR_TEXT), msg);
+                }
+            }
+        });
+        ui.end_row();
     }
 
     fn draw_footer(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.add_space(paint::SPACE_12 as f32);
         ui.horizontal(|ui| {
             let accent = accent32(&self.cfg);
-            let on_accent = surface32(&self.cfg);
-            let save = egui::Button::new(egui::RichText::new("저장").color(on_accent)).fill(accent);
-            if ui.add(save).clicked() {
-                match self.cfg.save() {
-                    Ok(()) => {
-                        self.saved_until = Some(Instant::now() + SAVED_MESSAGE);
-                        self.save_error = None;
-                    }
-                    Err(e) => self.save_error = Some(e),
-                }
-            }
-            if ui.button("닫기").clicked() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
             if let Some(until) = self.saved_until {
                 if Instant::now() < until {
-                    ui.colored_label(accent, "저장됨");
+                    ui.colored_label(accent, "저장됨 · 트레이에 바로 반영돼요");
                     ctx.request_repaint_after(Duration::from_millis(100));
                 } else {
                     self.saved_until = None;
                 }
             }
+            if let Some(err) = &self.save_error {
+                ui.colored_label(rgb32(ERROR_TEXT), format!("저장 실패: {err}"));
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let save = egui::Button::new(egui::RichText::new("저장").strong().color(surface32(&self.cfg)))
+                    .fill(accent)
+                    .min_size(egui::vec2(88.0, 34.0));
+                if ui.add(save).clicked() {
+                    match self.cfg.save() {
+                        Ok(()) => {
+                            self.saved_until = Some(Instant::now() + SAVED_MESSAGE);
+                            self.save_error = None;
+                        }
+                        Err(e) => self.save_error = Some(e),
+                    }
+                }
+                if ui.add(egui::Button::new("닫기").min_size(egui::vec2(72.0, 34.0))).clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
         });
-        if let Some(err) = &self.save_error {
-            ui.colored_label(rgb32(ERROR_TEXT), format!("저장 실패: {err}"));
-        }
-        ui.add_space(paint::SPACE_12 as f32);
     }
 }
 
@@ -382,22 +398,51 @@ impl eframe::App for SettingsApp {
         self.log_renderer_once(frame);
         let ctx = ui.ctx().clone();
         ctx.set_visuals(dark_visuals(accent32(&self.cfg)));
+        for theme in [egui::Theme::Dark, egui::Theme::Light] {
+            ctx.style_mut_of(theme, |s| {
+                s.spacing.item_spacing = egui::vec2(8.0, 8.0);
+                s.spacing.button_padding = egui::vec2(12.0, 6.0);
+                s.spacing.interact_size.y = 30.0;
+                s.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(15.0));
+                s.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(15.0));
+                s.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(14.0));
+            });
+        }
         self.handle_hotkey_capture(&ctx);
         if self.capturing.is_some() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
 
-        egui::Panel::bottom("footer").show(ui, |ui| self.draw_footer(ui, &ctx));
-        egui::CentralPanel::default().show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| self.draw_body(ui));
+        let footer = egui::Frame::new()
+            .fill(rgb32(PANEL))
+            .inner_margin(egui::Margin::symmetric(PAGE_MARGIN as i8, paint::SPACE_12 as i8));
+        egui::Panel::bottom("footer").frame(footer).show(ui, |ui| self.draw_footer(ui, &ctx));
+        let page = egui::Frame::new().fill(rgb32(PANEL)).inner_margin(egui::Margin::symmetric(PAGE_MARGIN as i8, 0));
+        egui::CentralPanel::default().frame(page).show(ui, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| self.draw_body(ui));
         });
     }
 }
 
-fn section_header(ui: &mut egui::Ui, text: &str) {
-    ui.add_space(paint::SPACE_24 as f32);
-    ui.label(egui::RichText::new(text).color(rgb32(SECONDARY)).small().strong());
+/// Titled card grouping one settings section.
+fn section(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(paint::SPACE_16 as f32);
+    ui.label(egui::RichText::new(title).color(rgb32(SECONDARY)).size(13.0).strong());
     ui.add_space(paint::SPACE_8 as f32);
+    let inner_w = ui.available_width() - 2.0 * paint::SPACE_16 as f32;
+    egui::Frame::new()
+        .fill(rgb32(CARD))
+        .corner_radius(CARD_RADIUS)
+        .inner_margin(paint::SPACE_16 as f32)
+        .show(ui, |ui| {
+            ui.set_width(inner_w);
+            body(ui);
+        });
+}
+
+/// Two-column label/control grid inside a section card.
+fn grid(ui: &mut egui::Ui, id: &str, body: impl FnOnce(&mut egui::Ui)) {
+    egui::Grid::new(id).num_columns(2).min_col_width(LABEL_W).spacing([paint::SPACE_16 as f32, 12.0]).show(ui, body);
 }
 
 fn lang_combo(ui: &mut egui::Ui, id: &str, code: &mut String) {
@@ -412,13 +457,15 @@ fn lang_combo(ui: &mut egui::Ui, id: &str, code: &mut String) {
 }
 
 fn color_row(ui: &mut egui::Ui, label: &str, color: &mut Rgb) {
+    ui.label(label);
     ui.horizontal(|ui| {
-        ui.label(label);
         let mut rgb = [color.0, color.1, color.2];
         if ui.color_edit_button_srgb(&mut rgb).changed() {
             *color = (rgb[0], rgb[1], rgb[2]);
         }
+        ui.label(egui::RichText::new(config::to_hex(*color)).monospace().color(rgb32(SECONDARY)));
     });
+    ui.end_row();
 }
 
 /// Builds a `global_hotkey` syntax string, e.g. "Ctrl+Alt+T", in a fixed modifier order so
@@ -451,14 +498,17 @@ fn draw_preview(ui: &mut egui::Ui, cfg: &Config) {
     let sample = "번역된 문장이 이렇게 보여요";
 
     let avail_w = ui.available_width();
-    let (rect, _resp) = ui.allocate_exact_size(egui::vec2(avail_w, 132.0), egui::Sense::hover());
+    let (rect, _resp) = ui.allocate_exact_size(egui::vec2(avail_w, 120.0), egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
-    // Neutral backdrop standing in for the screenshot the real overlay sits on top of.
-    painter.rect_filled(rect, paint::RADIUS_HIGHLIGHT, egui::Color32::from_gray(48));
+    // Light page standing in for the screenshot the real overlay sits on top of.
+    painter.rect_filled(rect, paint::RADIUS_HIGHLIGHT, egui::Color32::from_rgb(0xEE, 0xED, 0xE8));
 
     let origin = rect.min + egui::vec2(paint::SPACE_16 as f32, paint::SPACE_16 as f32);
-    let highlight_rect = egui::Rect::from_min_size(origin, egui::vec2(160.0, 26.0));
+    let original =
+        painter.layout_no_wrap("The original text".to_string(), egui::FontId::proportional(16.0), egui::Color32::from_gray(40));
+    let highlight_rect = egui::Rect::from_min_size(origin, original.size() + egui::vec2(8.0, 4.0));
+    painter.galley(origin + egui::vec2(4.0, 2.0), original, egui::Color32::from_gray(40));
     painter.rect_filled(highlight_rect, paint::RADIUS_HIGHLIGHT, with_alpha(accent, HIGHLIGHT_FILL_ALPHA));
     painter.rect_stroke(
         highlight_rect,
