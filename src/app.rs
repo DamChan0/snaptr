@@ -20,7 +20,7 @@ use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::render::{self, ConnectionExt as _, CreatePictureAux, PictOp};
 use x11rb::protocol::xproto::{
     ConnectionExt as _, CreateGCAux, CreateWindowAux, Cursor, EventMask, Gcontext, GrabMode,
-    GrabStatus, Keycode, ModMask, Pixmap, Rectangle, Window, WindowClass,
+    GrabStatus, Keycode, ModMask, Pixmap, Rectangle, SubwindowMode, Window, WindowClass,
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
@@ -177,7 +177,10 @@ impl Ui {
 
         let id = |conn: &RustConnection| conn.generate_id().map_err(|e| format!("allocating X id: {e}"));
         let gc = id(&conn)?;
-        conn.create_gc(gc, root, &CreateGCAux::new().graphics_exposures(0)).map_err(|e| e.to_string())?;
+        // IncludeInferiors: copy what is visible on screen (all windows), not just root's own
+        // pixels, which are black/empty under any real desktop.
+        let aux = CreateGCAux::new().graphics_exposures(0).subwindow_mode(SubwindowMode::INCLUDE_INFERIORS);
+        conn.create_gc(gc, root, &aux).map_err(|e| e.to_string())?;
         let clear = id(&conn)?;
         let dim = id(&conn)?;
         for pm in [clear, dim] {
