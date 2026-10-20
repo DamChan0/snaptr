@@ -38,7 +38,7 @@ const FADE_FOR: Duration = Duration::from_millis(140);
 const FADE_FRAME: Duration = Duration::from_millis(16);
 const FADE_FROM: f32 = 0.3;
 
-const HINT_TEXT: &str = "드래그해서 영역 선택 · 클릭하면 화면 전체 · Esc 닫기";
+const HINT_TEXT: &str = "드래그해서 영역 선택 · Esc 닫기";
 const READING_TEXT: &str = "글자 읽는 중";
 const EMPTY_TEXT: &str = "글자를 찾지 못했어요 · 다시 드래그하거나 Esc";
 const ALL_FAILED_TEXT: &str = "번역 실패 · 네트워크를 확인하세요";
@@ -199,10 +199,10 @@ impl ApplicationHandler<Msg> for App {
                     let _ = inner_size_writer.request_inner_size(PhysicalSize::new(w.desk.w as u32, w.desk.h as u32));
                 }
             }
-            WindowEvent::Focused(true) => {
+            WindowEvent::Focused(focused) => {
                 #[cfg(target_os = "linux")]
                 if let Some(w) = &mut self.win {
-                    w.focused = true;
+                    w.focused = focused;
                 }
             }
             WindowEvent::ModifiersChanged(m) => self.s.ctrl = m.state().control_key(),
@@ -420,8 +420,6 @@ impl App {
         self.remove(Role::SizeReadout);
         let end = self.s.pointer;
         if (end.0 - start.0).abs() < CLICK_THRESHOLD && (end.1 - start.1).abs() < CLICK_THRESHOLD {
-            let m = self.monitor_at(end.0, end.1);
-            self.start_job(m, m);
             return;
         }
         let m = self.monitor_at(start.0, start.1);
