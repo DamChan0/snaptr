@@ -38,10 +38,10 @@ impl Font {
         scaled.h_advance(scaled.glyph_id(c))
     }
 
-    /// Line height (ascent + descent + line gap) at the given pixel size.
+    /// Line height per the design spec: 1.45 x font px for every font size, chrome and
+    /// translation text alike (overrides the font's natural ascent/descent/line-gap metric).
     pub fn line_height(&self, px: f32) -> f32 {
-        let scaled = self.scaled(px);
-        scaled.ascent() - scaled.descent() + scaled.line_gap()
+        px * 1.45
     }
 
     pub fn ascent(&self, px: f32) -> f32 {

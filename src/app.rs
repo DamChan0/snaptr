@@ -20,7 +20,7 @@ use x11rb::protocol::Event;
 const MARGIN: i32 = 16;
 const GAP: i32 = 8;
 const PADDING: i32 = 8;
-const MIN_FONT_PX: i32 = 12;
+const MIN_FONT_PX: i32 = 13;
 const MIN_BOX_W: i32 = 240;
 const CLICK_THRESHOLD: i32 = 5;
 const HIGHLIGHT_ALPHA: f32 = 0.35;
@@ -232,7 +232,7 @@ fn render_blocks(
 
         let bm = monitor_for_rect(block_screen, monitors, fallback_monitor);
         let box_w = block_screen.w.clamp(MIN_BOX_W, (bm.w - 2 * MARGIN).max(MIN_BOX_W));
-        let preferred_font = ((block.avg_line_height * 0.9) as i32).clamp(14, 48);
+        let preferred_font = ((block.avg_line_height * 1.05).round() as i32).clamp(MIN_FONT_PX, 56);
 
         let mut avoid: Vec<Rect> = block_screen_rects
             .iter()
