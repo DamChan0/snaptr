@@ -111,8 +111,14 @@ fn register_hotkey(manager: &GlobalHotKeyManager, spec: &str, which: &str) -> Op
 /// Spawns `current_exe() <mode>` unless the process already in `slot` is still running.
 fn spawn_if_idle(slot: &mut Option<Child>, mode: &str) {
     if let Some(child) = slot {
-        if matches!(child.try_wait(), Ok(None)) {
-            return;
+        match child.try_wait() {
+            Ok(None) => return,
+            Ok(Some(_)) => {}
+            // Unknown state: don't risk a second window or losing the handle.
+            Err(e) => {
+                eprintln!("snaptr: '{mode}' 상태 확인 실패: {e}");
+                return;
+            }
         }
     }
     let Ok(exe) = std::env::current_exe() else { return };
@@ -141,19 +147,33 @@ impl App {
             return;
         }
         self.config_mtime = mtime;
-        let new_cfg = Config::load();
+        let mut new_cfg = Config::load();
 
-        if new_cfg.hotkey_crop != self.config.hotkey_crop {
-            if let Some(hk) = self.crop_hotkey.take() {
-                let _ = self.manager.unregister(hk);
+        // Unregister every changed key first so swapping the two combos works, then register
+        // the new ones; a key that fails to register (e.g. taken by another app) falls back to
+        // its previous combo so the user never ends up with no hotkey.
+        let crop_changed = new_cfg.hotkey_crop != self.config.hotkey_crop;
+        let full_changed = new_cfg.hotkey_full != self.config.hotkey_full;
+        for (changed, slot) in [(crop_changed, &mut self.crop_hotkey), (full_changed, &mut self.full_hotkey)] {
+            if changed {
+                if let Some(hk) = slot.take() {
+                    let _ = self.manager.unregister(hk);
+                }
             }
-            self.crop_hotkey = register_hotkey(&self.manager, &new_cfg.hotkey_crop, "영역 번역");
         }
-        if new_cfg.hotkey_full != self.config.hotkey_full {
-            if let Some(hk) = self.full_hotkey.take() {
-                let _ = self.manager.unregister(hk);
+        if crop_changed {
+            self.crop_hotkey = register_hotkey(&self.manager, &new_cfg.hotkey_crop, "영역 번역");
+            if self.crop_hotkey.is_none() {
+                new_cfg.hotkey_crop = self.config.hotkey_crop.clone();
+                self.crop_hotkey = register_hotkey(&self.manager, &new_cfg.hotkey_crop, "영역 번역");
             }
+        }
+        if full_changed {
             self.full_hotkey = register_hotkey(&self.manager, &new_cfg.hotkey_full, "화면 전체 번역");
+            if self.full_hotkey.is_none() {
+                new_cfg.hotkey_full = self.config.hotkey_full.clone();
+                self.full_hotkey = register_hotkey(&self.manager, &new_cfg.hotkey_full, "화면 전체 번역");
+            }
         }
 
         self.tray.update_labels(&new_cfg);

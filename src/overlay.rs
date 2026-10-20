@@ -381,9 +381,10 @@ impl App {
         match self.s.phase {
             Phase::Selecting => {
                 if let Some(start) = self.s.drag_start {
-                    let r = rect_from_points(start, (x, y));
+                    // Same clipping as on release: a selection never spans monitors.
+                    let m = self.monitor_at(start.0, start.1);
+                    let r = rect_from_points(start, (x, y)).intersect_opt(m).unwrap_or(Rect { x: start.0, y: start.1, w: 1, h: 1 });
                     self.set_selection(r, true);
-                    let m = self.monitor_at(r.x + r.w / 2, r.y + r.h / 2);
                     let chip = self.anchored_chip(Role::SizeReadout, r, m, &format!("{} × {}", r.w, r.h), false);
                     self.replace(chip);
                 }

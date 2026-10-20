@@ -105,7 +105,10 @@ impl Config {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
         }
-        std::fs::write(&path, self.serialize()).map_err(|e| format!("writing {}: {e}", path.display()))
+        // Write then rename so the tray's mtime poll never reads a half-written file.
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, self.serialize()).map_err(|e| format!("writing {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, &path).map_err(|e| format!("writing {}: {e}", path.display()))
     }
 
     pub fn parse(s: &str) -> Config {

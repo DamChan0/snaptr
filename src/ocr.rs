@@ -101,8 +101,8 @@ mod platform {
     }
 
     pub fn ocr(rgb: &[u8], width: u32, height: u32, lang: &Lang) -> Result<Vec<OcrBlock>, String> {
-        let language =
-            Language::CreateLanguage(&HSTRING::from(lang.bcp47)).map_err(|_| unsupported_language(lang))?;
+        let language = Language::CreateLanguage(&HSTRING::from(lang.bcp47))
+            .map_err(|e| format!("Windows OCR 언어 초기화 실패: {e}"))?;
         if !OcrEngine::IsLanguageSupported(&language).unwrap_or(false) {
             return Err(unsupported_language(lang));
         }
