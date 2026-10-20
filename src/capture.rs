@@ -13,8 +13,8 @@ pub fn capture(r: Rect) -> Result<Vec<u8>, String> {
 #[cfg(target_os = "linux")]
 mod platform {
     use super::Rect;
+    use x11rb::connection::Connection;
     use x11rb::image::{Image, ImageOrder, PixelLayout};
-    use x11rb::image::{Image, PixelLayout};
 
     /// GetImage on the root window returns what is on screen, children included.
     pub fn capture(r: Rect) -> Result<Vec<u8>, String> {
@@ -27,6 +27,7 @@ mod platform {
             .ok_or("root visual not found")?;
         let layout = PixelLayout::from_visual_type(visual).map_err(|e| format!("unsupported root visual: {e:?}"))?;
         let (img, _) = Image::get(&conn, screen.root, r.x as i16, r.y as i16, r.w as u16, r.h as u16)
+            .map_err(|e| format!("capturing screen: {e}"))?;
         let mut out = Vec::with_capacity((r.w * r.h * 3) as usize);
         let bgrx = img.byte_order() == ImageOrder::LsbFirst
             && img.data().len() >= r.w as usize * r.h as usize * 4
